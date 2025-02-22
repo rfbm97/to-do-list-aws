@@ -1,0 +1,68 @@
+pipeline {
+    agent any
+    environment {
+        GITHUB_TOKEN = credentials('GITHUB_TOKEN')
+        
+    }
+    stages {
+        stage('Get Code') {
+            steps {
+                git branch: 'develop', url: 'https://github.com/rfbm97/to-do-list-aws.git'
+            }
+        }
+        stage('Static') {
+            steps {
+                // Ejecutamos flake8 para realizar las pruebas estáticas y bandit para relizar las pruebas de seguridad y exportamos los resultados a flake8.out y bandit.out respectivamente
+                sh '''
+                    cd src
+                    python -m flake8 --format=pylint --exit-zero app>flake8.out
+                    python -m bandit --exit-zero -r . -f custom -o bandit.out --msg-template "{abspath}:{line}: {severity}: {test_id}: {msg}"
+                '''
+                // Vemos los resultados de forma gráfica, utilizando el plugin warnings-ng
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')], qualityGates: [[threshold: 8, type: 'TOTAL', unstable: true], [threshold: 10, type: 'TOTAL', unstable: false]]
+                    recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')], qualityGates: [[threshold: 2, type: 'TOTAL', unstable: true], [threshold: 4, type: 'TOTAL', unstable: false]]
+                }
+            }
+        }
+        stage('Deploy') {
+            steps {
+                sh '''
+                    sam build
+                    sam deploy --config-env staging --config-file samconfig.toml --resolve-s3
+                '''
+               
+            }
+        }
+        stage('Rest Test'){
+             steps {
+                // Cogemos la base de la URL con un script:
+                script {
+                    def BASE_URL = sh(script: "aws cloudformation describe-stacks --stack-name todo-list-aws-staging --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --region us-east-1 --output text", returnStdout: true).trim()
+                    echo "$BASE_URL"
+                    
+                    // Asignar BASE_URL como variable global para el pipeline
+                    env.BASE_URL = BASE_URL
+                    
+                        sh """
+                            export BASE_URL=$BASE_URL
+                            echo "BASE_URL is: \$BASE_URL"
+                            python -m pytest ${WORKSPACE}/test/integration/todoApiTest.py
+                        """
+                }
+            }
+        }
+        stage('Promote'){
+            steps{
+                sh'''
+                    git checkout master
+                    git merge develop
+                    git add .
+                    git commit -m "Merge con la rama develop"
+                    git push https://${GITHUB_TOKEN}@github.com/rfbm97/to-do-list-aws.git
+
+                '''
+            }
+        }
+    }
+}
