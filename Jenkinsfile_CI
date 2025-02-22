@@ -47,7 +47,7 @@ pipeline {
                         sh """
                             export BASE_URL=$BASE_URL
                             echo "BASE_URL is: \$BASE_URL"
-                            python -m pytest ${WORKSPACE}/test/integration/todoApiTest.py
+                            python -m pytest ${WORKSPACE}/test/integration/todoApiTest.py "ci"
                         """
                 }
             }
