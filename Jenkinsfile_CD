@@ -7,7 +7,7 @@ pipeline {
     stages {
         stage('Get Code') {
             steps {
-                git branch: 'develop', url: 'https://github.com/rfbm97/todo-list-aws.git'
+                git branch: 'develop', url: 'https://github.com/rfbm97/to-do-list-aws.git'
             }
         }
         
